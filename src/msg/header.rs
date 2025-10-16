@@ -11,6 +11,36 @@ pub enum MsgType {
     DisConnectExtended = 18,
 }
 
+impl TryFrom<u8> for MsgType {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(MsgType::Undefined),
+            1 => Ok(MsgType::Connect),
+            2 => Ok(MsgType::ConnectAck),
+            3 => Ok(MsgType::Data),
+            14 => Ok(MsgType::DisConnect),
+            16 => Ok(MsgType::ConnectExtended),
+            17 => Ok(MsgType::ConnectExtendedAck),
+            18 => Ok(MsgType::DisConnectExtended),
+            _ => Err(()),
+        }
+    }
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum DeviceCode {
+    MobileApp = 0x41,
+    Backend = 0x42,
+    ChargingStationApplicationSw = 0x43,
+    MowerMainBoardApplicationSw = 0x4D,
+    PcConnectedToMowerCsConnector = 0x4E,
+    PcConnectedToMainBoardUartInterface = 0x4F,
+    PcConnectedToCsBoard = 0x50,
+}
+
 pub struct Header {
     soh: u8,
     stx: u8,
@@ -19,7 +49,7 @@ pub struct Header {
     pub crc: u16,
 }
 impl Header {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Header {
             soh: 0x01,
             stx: 0x02,
@@ -27,6 +57,11 @@ impl Header {
             payload_length: 0,
             crc: 0,
         }
+    }
+
+    // 在message的to bytes中调用
+    fn calculate_crc(&self, buf: &Vec<u8>) -> u16 {
+        todo!()
     }
 }
 impl Into<[u8; 7]> for Header {
@@ -40,23 +75,34 @@ impl Into<[u8; 7]> for Header {
         bytes
     }
 }
+impl From<Vec<u8>> for Header {
+    fn from(bytes: Vec<u8>) -> Self {
+        let mut header = Header::new();
+        header.soh = bytes[0];
+        header.stx = bytes[1];
+        header.msg_type = MsgType::try_from(bytes[2]).unwrap_or(MsgType::Undefined);
+        header.payload_length = u16::from_le_bytes([bytes[3], bytes[4]]);
+        header.crc = u16::from_le_bytes([bytes[5], bytes[6]]);
+        header
+    }
+}
 const DEFAULT_PROTOCOL_ID: u8 = 0x06;
 const DEFAULT_PROTOCOL_VERSION: u8 = 0x02;
 const DEFAULT_KEEP_ALIVE_LSB: u8 = 0;
 const DEFAULT_KEEP_ALIVE_MSB: u8 = 0;
 const DEFAULT_CLIENT_ID: u32 = 0x01;
-const DEFAULT_SENDER: u8 = 0x4f; // pc connect to mainboard UART interface
-const DEFAULT_RECEIVER: u8 = 0x4d; // mainboard UART 
-const DEFAULT_CONNECT_RETURN_CODE: u8 = 0x09; 
+const DEFAULT_SENDER: u8 = DeviceCode::PcConnectedToMainBoardUartInterface as u8;
+const DEFAULT_RECEIVER: u8 = DeviceCode::MowerMainBoardApplicationSw as u8;
+const DEFAULT_CONNECT_RETURN_CODE: u8 = 0x09;
 
 pub struct VarHeader {
     protocol_id: Option<u8>,
     protocol_version: Option<u8>,
-    sender : Option<u8>,
-    receiver : Option<u8>,
+    sender: Option<u8>,
+    receiver: Option<u8>,
     client_id: Option<u32>,
     connect_return_code: Option<u8>,
-    size: u16
+    size: u16,
 }
 
 impl VarHeader {
@@ -68,7 +114,7 @@ impl VarHeader {
             receiver: Some(DEFAULT_RECEIVER),
             client_id: Some(DEFAULT_CLIENT_ID),
             connect_return_code: Some(DEFAULT_CONNECT_RETURN_CODE),
-            size: 0// TODO: has default size depending on message type
+            size: 0, // TODO: has default size depending on message type
         }
     }
 }
@@ -111,7 +157,7 @@ impl From<Vec<u8>> for VarHeader {
         var_header
     }
 }
-impl Into <Vec<u8>> for VarHeader {
+impl Into<Vec<u8>> for VarHeader {
     fn into(self) -> Vec<u8> {
         let mut bytes = Vec::new();
 
