@@ -1,6 +1,7 @@
 mod header;
 mod params;
 mod payload;
+mod serialization;
 
 use header::MsgType;
 use params::Param;

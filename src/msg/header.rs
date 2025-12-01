@@ -1,3 +1,4 @@
+use crc::{CRC_16_ARC, Crc};
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum MsgType {
@@ -60,8 +61,11 @@ impl Header {
     }
 
     // 在message的to bytes中调用
-    fn calculate_crc(&self, buf: &Vec<u8>) -> u16 {
-        todo!()
+    fn calculate_crc(&mut self, buf: &mut Vec<u8>) -> u16 {
+        let crc = Crc::<u16>::new(&CRC_16_ARC);
+        self.crc = crc.checksum(buf);
+        buf[5..6].copy_from_slice(&self.crc.to_le_bytes());
+        self.crc
     }
 }
 impl Into<[u8; 7]> for Header {
@@ -75,8 +79,8 @@ impl Into<[u8; 7]> for Header {
         bytes
     }
 }
-impl From<Vec<u8>> for Header {
-    fn from(bytes: Vec<u8>) -> Self {
+impl From<&[u8]> for Header {
+    fn from(bytes: &[u8]) -> Self {
         let mut header = Header::new();
         header.soh = bytes[0];
         header.stx = bytes[1];
@@ -98,11 +102,14 @@ const DEFAULT_CONNECT_RETURN_CODE: u8 = 0x09;
 pub struct VarHeader {
     protocol_id: Option<u8>,
     protocol_version: Option<u8>,
+    keepalive_lsb: Option<u8>,
+    keepalive_msb: Option<u8>,
     sender: Option<u8>,
     receiver: Option<u8>,
     client_id: Option<u32>,
     connect_return_code: Option<u8>,
     size: u16,
+    data: Vec<u8>,
 }
 
 impl VarHeader {
@@ -110,76 +117,167 @@ impl VarHeader {
         VarHeader {
             protocol_id: Some(DEFAULT_PROTOCOL_ID),
             protocol_version: Some(DEFAULT_PROTOCOL_VERSION),
+            keepalive_lsb: Some(DEFAULT_KEEP_ALIVE_LSB),
+            keepalive_msb: Some(DEFAULT_KEEP_ALIVE_MSB),
             sender: Some(DEFAULT_SENDER),
             receiver: Some(DEFAULT_RECEIVER),
             client_id: Some(DEFAULT_CLIENT_ID),
             connect_return_code: Some(DEFAULT_CONNECT_RETURN_CODE),
             size: 0, // TODO: has default size depending on message type
+            data: Vec::new(),
         }
     }
-}
-impl From<Vec<u8>> for VarHeader {
-    fn from(bytes: Vec<u8>) -> Self {
-        let mut var_header = VarHeader::new();
-        let mut index = 0;
+    pub fn protocol_id(mut self, v: u8) -> Self {
+        self.protocol_id = Some(v);
+        self
+    }
+    pub fn protocol_version(mut self, v: u8) -> Self {
+        self.protocol_version = Some(v);
+        self
+    }
+    pub fn keepalive_lsb(mut self, v: u8) -> Self {
+        self.keepalive_lsb = Some(v);
+        self
+    }
+    pub fn keepalive_msb(mut self, v: u8) -> Self {
+        self.keepalive_msb = Some(v);
+        self
+    }
+    pub fn sender(mut self, v: u8) -> Self {
+        self.sender = Some(v);
+        self
+    }
+    pub fn receiver(mut self, v: u8) -> Self {
+        self.receiver = Some(v);
+        self
+    }
+    pub fn client_id(mut self, v: u32) -> Self {
+        self.client_id = Some(v);
+        self
+    }
+    pub fn connect_return_code(mut self, v: u8) -> Self {
+        self.connect_return_code = Some(v);
+        self
+    }
 
-        if bytes.len() > index {
-            var_header.protocol_id = Some(bytes[index]);
-            index += 1;
+    fn build(mut self, msg_type: MsgType) -> Self {
+        self.size = VarHeader::default_size(msg_type).unwrap();
+        match msg_type {
+            MsgType::ConnectExtended => {
+                self.data.push(self.protocol_id.unwrap());
+                self.data.push(DEFAULT_PROTOCOL_VERSION);
+                self.data.push(DEFAULT_KEEP_ALIVE_LSB);
+                self.data.push(DEFAULT_KEEP_ALIVE_MSB);
+                self.data.extend(self.client_id.unwrap().to_le_bytes());
+                self.data.push(self.sender.unwrap());
+                self.data.push(self.receiver.unwrap());
+            }
+            MsgType::Connect => {
+                self.data.push(self.protocol_id.unwrap());
+                self.data.push(DEFAULT_PROTOCOL_VERSION);
+                self.data.push(DEFAULT_KEEP_ALIVE_LSB);
+                self.data.push(DEFAULT_KEEP_ALIVE_MSB);
+                self.data.extend(self.client_id.unwrap().to_le_bytes());
+                self.data.push(self.sender.unwrap());
+            }
+            MsgType::ConnectExtendedAck => {
+                self.data.extend(self.client_id.unwrap().to_le_bytes());
+                self.data.push(self.sender.unwrap());
+                self.data.push(self.receiver.unwrap());
+            }
+            MsgType::Data => {
+                self.data.extend(self.client_id.unwrap().to_le_bytes());
+                self.data.push(self.sender.unwrap());
+                self.data.push(self.receiver.unwrap());
+            }
+            MsgType::DisConnectExtended => {
+                self.data.extend(self.client_id.unwrap().to_le_bytes());
+                self.data.push(self.sender.unwrap());
+                self.data.push(self.receiver.unwrap());
+            }
+            MsgType::DisConnect => {
+                self.data.extend(self.client_id.unwrap().to_le_bytes());
+                self.data.push(self.sender.unwrap());
+                self.data.push(self.receiver.unwrap());
+            }
+            _ => {}
+        };
+        self
+    }
+    fn default_size(msg_type: MsgType) -> Option<u16> {
+        match msg_type {
+            MsgType::Connect => Some(9),
+            MsgType::ConnectAck => Some(1),
+            MsgType::Data => Some(6),
+            MsgType::DisConnect => Some(5),
+            MsgType::ConnectExtended => Some(10),
+            MsgType::ConnectExtendedAck => Some(7),
+            MsgType::DisConnectExtended => Some(6),
+            _ => None,
         }
-        if bytes.len() > index {
-            var_header.protocol_version = Some(bytes[index]);
-            index += 1;
-        }
-        if bytes.len() > index {
-            var_header.sender = Some(bytes[index]);
-            index += 1;
-        }
-        if bytes.len() > index {
-            var_header.receiver = Some(bytes[index]);
-            index += 1;
-        }
-        if bytes.len() >= index + 4 {
-            var_header.client_id = Some(u32::from_le_bytes([
-                bytes[index],
-                bytes[index + 1],
-                bytes[index + 2],
-                bytes[index + 3],
-            ]));
-            index += 4;
-        }
-        if bytes.len() > index {
-            var_header.connect_return_code = Some(bytes[index]);
-            index += 1;
-        }
-
-        var_header.size = index as u16;
+    }
+    fn from_bytes(buf: &[u8], msg_type: MsgType) -> VarHeader {
+        let size = Self::default_size(msg_type);
+        let mut var_header = match msg_type {
+            MsgType::ConnectExtended => Self::create_connect(buf),
+            MsgType::Connect => Self::create_connect_legacy(buf),
+            MsgType::ConnectExtendedAck => Self::create_connect_ack(buf),
+            MsgType::ConnectAck => Self::create_connect_ack_lagacy(buf),
+            MsgType::Data => Self::create_data(buf),
+            MsgType::DisConnectExtended => Self::create_disconnect(buf),
+            MsgType::DisConnect => Self::create_disconnect_legacy(buf),
+            _ => VarHeader::new()
+        };
+        var_header.size = size.unwrap();
         var_header
     }
-}
-impl Into<Vec<u8>> for VarHeader {
-    fn into(self) -> Vec<u8> {
-        let mut bytes = Vec::new();
+    fn create_connect(buf: &[u8]) -> VarHeader {
+        let var_header = VarHeader::new()
+            .protocol_id(buf[0])
+            .protocol_version(buf[1])
+            .keepalive_lsb(buf[2])
+            .keepalive_msb(buf[3])
+            .client_id(u32::from_le_bytes(buf[4..8].try_into().unwrap()))
+            .sender(buf[8])
+            .receiver(buf[9]);
+        var_header
+    }
+    fn create_connect_legacy(buf: &[u8]) -> VarHeader {
+        VarHeader::new()
+            .protocol_id(buf[0])
+            .protocol_version(buf[1])
+            .keepalive_lsb(buf[2])
+            .keepalive_msb(buf[3])
+            .client_id(u32::from_le_bytes(buf[4..8].try_into().unwrap()))
+            .sender(buf[8])
+    }
+    fn create_connect_ack(buf: &[u8]) -> VarHeader {
+        VarHeader::new()
+            .connect_return_code(buf[0])
+            .client_id(u32::from_le_bytes(buf[1..5].try_into().unwrap()))
+            .sender(buf[5])
+            .receiver(buf[6])
+    }
 
-        if let Some(protocol_id) = self.protocol_id {
-            bytes.push(protocol_id);
-        }
-        if let Some(protocol_version) = self.protocol_version {
-            bytes.push(protocol_version);
-        }
-        if let Some(sender) = self.sender {
-            bytes.push(sender);
-        }
-        if let Some(receiver) = self.receiver {
-            bytes.push(receiver);
-        }
-        if let Some(client_id) = self.client_id {
-            bytes.extend_from_slice(&client_id.to_le_bytes());
-        }
-        if let Some(connect_return_code) = self.connect_return_code {
-            bytes.push(connect_return_code);
-        }
+    fn create_connect_ack_lagacy(buf: &[u8]) -> VarHeader {
+        VarHeader::new().connect_return_code(buf[0])
+    }
 
-        bytes
+    fn create_data(buf: &[u8]) -> VarHeader {
+        VarHeader::new()
+            .client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
+            .sender(buf[4])
+            .receiver(buf[5])
+    }
+    fn create_disconnect(buf: &[u8]) -> VarHeader {
+        VarHeader::new()
+            .client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
+            .sender(buf[4])
+    }
+    fn create_disconnect_legacy(buf: &[u8]) -> VarHeader {
+        VarHeader::new()
+            .client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
+            .sender(buf[4])
+            .receiver(buf[5])
     }
 }
