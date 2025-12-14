@@ -24,6 +24,19 @@ impl serde::de::Error for BinarySerializeError {
     }
 }
 
+pub fn serialize<T: serde::Serialize>(value: &T) -> Result<Vec<u8>, BinarySerializeError> {
+    let mut ser = BinarySerializer::new();
+    value.serialize(&mut ser)?;
+    Ok(ser.into_bytes())
+}
+pub fn deserialize<T>(bytes: &[u8]) -> Result<T, BinarySerializeError>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    let mut de = BinaryDeserializer::new(bytes);
+    T::deserialize(&mut de)
+}
+
 // 序列化器
 pub struct BinarySerializer {
     output: Vec<u8>,
