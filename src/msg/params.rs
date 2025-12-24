@@ -40,11 +40,34 @@ impl ParamPayload {
 }
 
 pub struct Param {
-    id: u16,
-    data: ParamPayload,
+    pub id: u16,
+    pub data: ParamPayload,
 }
 
-fn test_param() {
+impl Param {
+    pub fn new(id: u16, data: ParamPayload) -> Self {
+        Param { id, data }
+    }
+    pub fn to_bytes(self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&self.id.to_le_bytes());
+        let data_bytes = self.data.encode();
+        let len = data_bytes.len() as u16;
+        println!("data_bytes len: {len}");
+        buf.extend_from_slice(&len.to_le_bytes());
+        buf.extend_from_slice(&data_bytes);
+        buf
+    }
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, BinarySerializeError> {
+        let id = u16::from_le_bytes([bytes[0], bytes[1]]);
+        let len = u16::from_le_bytes([bytes[2], bytes[3]]);
+        println!("id: {id}, len: {len}, bytes len: {}", bytes.len());
+        let data = ParamPayload::deconde(id, &bytes[4..(4 + len) as usize])?;
+        Ok(Param { id, data })
+    }
+}
+
+pub fn test_param() {
     let param = ParamPayload::P471(data::Param471 {
         return_code: 0,
         current_cutting_height: 0,
@@ -53,4 +76,16 @@ fn test_param() {
     });
     let bytes = param.encode();
     let p1 = ParamPayload::deconde(471, &bytes);
+    let param = Param::new(
+        471,
+        ParamPayload::P471(data::Param471 {
+            return_code: 0,
+            current_cutting_height: 0,
+            default_cutting_height: 0,
+            information: 1,
+        }),
+    );
+    let bytes = param.to_bytes();
+    
+    let p2 = Param::from_bytes(&bytes).unwrap();
 }

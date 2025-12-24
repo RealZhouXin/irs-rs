@@ -6,7 +6,7 @@ pub mod serialization;
 use header::MsgType;
 use params::Param;
 
-struct Msg {
+pub struct Msg {
     header: header::Header,
     var_header: header::VarHeader,
     payload: payload::Payload,
@@ -14,29 +14,32 @@ struct Msg {
 }
 
 impl Msg {
-    fn new() -> Self {
+    pub fn new() -> Self {
         todo!()
     }
-    fn set_message_type(&mut self, msg_type: MsgType) {
+    pub fn set_message_type(&mut self, msg_type: MsgType) {
         self.header.msg_type = msg_type;
     }
-    fn get_message_type(&self) -> MsgType {
+    pub fn get_message_type(&self) -> MsgType {
         self.header.msg_type
     }
-    fn add_param(&mut self, param: Param) {
+    pub fn add_param(&mut self, param: Param) {
+        self.payload.add_param(param);
+    }
+    pub fn get_param(&self, index: usize) -> &Param {
+        self.payload.get_params().get(index).unwrap()
+    }
+    pub fn set_msg_id(&mut self, id: u8) {
+        self.payload.msg_id = id;
+    }
+    pub fn get_msg_id(&self) -> u8 {
+        self.payload.msg_id
+    }
+    pub fn set_client_id(&mut self, client_id: u32) {}
+    pub fn to_bytes(&self) -> Vec<u8> {
         todo!()
     }
-    fn get_param(&self, index: usize) -> &Param {
-        todo!()
-    }
-}
-impl Into<Vec<u8>> for Msg {
-    fn into(self) -> Vec<u8> {
-        todo!()
-    }
-}
-impl From<Vec<u8>> for Msg {
-    fn from(bytes: Vec<u8>) -> Self {
+    pub fn from_bytes(bytes: &[u8]) -> Self {
         todo!()
     }
 }
