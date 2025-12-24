@@ -5,6 +5,8 @@ pub fn add(left: u64, right: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use tracing::info;
+
     use crate::msg::params::data;
 
     use super::*;
@@ -84,5 +86,9 @@ mod tests {
         let p1 = msg::payload::Payload::from_bytes(&bytes);
         assert_eq!(p1.msg_id, 5);
         assert_eq!(p1.params.len(), 2);
+        let params = p1.get_params();
+        params.iter().for_each(|param| {
+            info!("param: {}, {:?}", param.id, param.data);
+        });
     }
 }

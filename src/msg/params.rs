@@ -22,6 +22,9 @@ pub enum ParamPayload {
 impl ParamPayload {
     pub fn deconde(id: u16, bytes: &[u8]) -> Result<Self, BinarySerializeError> {
         let p = match id {
+            470 => {
+                return Ok(ParamPayload::P470);
+            },
             471 => {
                 let data = serialization::deserialize(&bytes)?;
                 return Ok(ParamPayload::P471(data));

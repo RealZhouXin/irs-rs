@@ -38,7 +38,6 @@ impl Payload {
     pub fn to_bytes(self) -> Vec<u8> {
         let mut buf = Vec::new();
         buf.push(self.msg_id);
-        buf.extend_from_slice(&self.unencrypted_length.to_le_bytes());
         let mut total_param_length = 0usize;
         let param_bytes_list: Vec<Vec<u8>> = self.params.into_iter().map(|param| {
             let id = param.id;
@@ -60,6 +59,7 @@ impl Payload {
         let mut payload = Payload::new();
         payload.msg_id = bytes[0];
         payload.unencrypted_length = u16::from_le_bytes([bytes[1], bytes[2]]);
+        
         let mut index = 3;
         while index < bytes.len() - 2 {
             let id = u16::from_le_bytes([bytes[index], bytes[index + 1]]);
