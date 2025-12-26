@@ -4,11 +4,12 @@ use tracing::debug;
 ///\details
 /// Payload format, see document DGE-RLM-0069
 ///
+/// ```text
 ///    |--------|---------|---------- Parameter #1---------|-----|- Parameter #N -|---------|
 ///    | MsgId  | UeLen   | ParamId | ParamLen | ParamData | ... |                | CRC     |
 ///    | 8 bits | 16 bits | 16 bits | 16 bits  | x bits    | ... |                | 16 bits |
 ///    |--------+---------+---------+----------+-----------+-----+----------------+---------|
-///
+/// ```
 pub struct Payload {
     pub msg_id: u8,
     pub unencrypted_length: u16,

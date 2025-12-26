@@ -2,7 +2,12 @@ mod msg;
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
-
+fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_test_writer()
+        .try_init();
+}
 #[cfg(test)]
 mod tests {
     use tracing::info;
@@ -10,12 +15,7 @@ mod tests {
     use crate::msg::params::data;
 
     use super::*;
-    fn init_tracing() {
-        let _ = tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::DEBUG)
-            .with_test_writer()
-            .try_init();
-    }
+
     #[test]
     fn it_works() {
         let param = msg::params::data::Param471 {
@@ -58,7 +58,7 @@ mod tests {
                 assert_eq!(data.current_cutting_height, 2);
                 assert_eq!(data.default_cutting_height, 3);
                 assert_eq!(data.information, 1);
-            },
+            }
             _ => panic!("unexpected param payload"),
         }
     }

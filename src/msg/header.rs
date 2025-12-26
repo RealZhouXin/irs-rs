@@ -1,4 +1,5 @@
 use crc::{CRC_16_ARC, Crc};
+use tracing::{debug, info};
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum MsgType {
@@ -42,6 +43,7 @@ enum DeviceCode {
     PcConnectedToCsBoard = 0x50,
 }
 
+#[derive(Debug)]
 pub struct Header {
     soh: u8,
     stx: u8,
@@ -68,9 +70,9 @@ impl Header {
         self.crc
     }
 }
-impl Into<[u8; 7]> for Header {
-    fn into(self) -> [u8; 7] {
-        let mut bytes = [0u8; 7];
+impl Into<Vec<u8>> for Header {
+    fn into(self) -> Vec<u8> {
+        let mut bytes = vec![0u8; 7];
         bytes[0] = self.soh;
         bytes[1] = self.stx;
         bytes[2] = self.msg_type as u8;
@@ -90,7 +92,7 @@ impl From<&[u8]> for Header {
         header
     }
 }
-const DEFAULT_PROTOCOL_ID: u8 = 0x06;
+const DEFAULT_PROTOCOL_ID: u8 = 0x06; // production interface
 const DEFAULT_PROTOCOL_VERSION: u8 = 0x02;
 const DEFAULT_KEEP_ALIVE_LSB: u8 = 0;
 const DEFAULT_KEEP_ALIVE_MSB: u8 = 0;
@@ -99,21 +101,22 @@ const DEFAULT_SENDER: u8 = DeviceCode::PcConnectedToMainBoardUartInterface as u8
 const DEFAULT_RECEIVER: u8 = DeviceCode::MowerMainBoardApplicationSw as u8;
 const DEFAULT_CONNECT_RETURN_CODE: u8 = 0x09;
 
+#[derive(Debug)]
 pub struct VarHeader {
-    protocol_id: Option<u8>,
-    protocol_version: Option<u8>,
-    keepalive_lsb: Option<u8>,
-    keepalive_msb: Option<u8>,
-    sender: Option<u8>,
-    receiver: Option<u8>,
-    client_id: Option<u32>,
-    connect_return_code: Option<u8>,
-    size: u16,
-    data: Vec<u8>,
+    pub protocol_id: Option<u8>,
+    pub protocol_version: Option<u8>,
+    pub keepalive_lsb: Option<u8>,
+    pub keepalive_msb: Option<u8>,
+    pub sender: Option<u8>,
+    pub receiver: Option<u8>,
+    pub client_id: Option<u32>,
+    pub connect_return_code: Option<u8>,
+    pub size: u16,
+    pub data: Vec<u8>,
 }
 
 impl VarHeader {
-    fn new() -> Self {
+    pub fn new() -> Self {
         VarHeader {
             protocol_id: Some(DEFAULT_PROTOCOL_ID),
             protocol_version: Some(DEFAULT_PROTOCOL_VERSION),
@@ -127,40 +130,44 @@ impl VarHeader {
             data: Vec::new(),
         }
     }
-    pub fn protocol_id(mut self, v: u8) -> Self {
+    pub fn with_protocol_id(mut self, v: u8) -> Self {
         self.protocol_id = Some(v);
         self
     }
-    pub fn protocol_version(mut self, v: u8) -> Self {
+    pub fn with_protocol_version(mut self, v: u8) -> Self {
         self.protocol_version = Some(v);
         self
     }
-    pub fn keepalive_lsb(mut self, v: u8) -> Self {
+    pub fn with_keepalive_lsb(mut self, v: u8) -> Self {
         self.keepalive_lsb = Some(v);
         self
     }
-    pub fn keepalive_msb(mut self, v: u8) -> Self {
+    pub fn with_keepalive_msb(mut self, v: u8) -> Self {
         self.keepalive_msb = Some(v);
         self
     }
-    pub fn sender(mut self, v: u8) -> Self {
+    pub fn with_sender(mut self, v: u8) -> Self {
         self.sender = Some(v);
         self
     }
-    pub fn receiver(mut self, v: u8) -> Self {
+    pub fn with_receiver(mut self, v: u8) -> Self {
         self.receiver = Some(v);
         self
     }
-    pub fn client_id(mut self, v: u32) -> Self {
+    pub fn with_client_id(mut self, v: u32) -> Self {
         self.client_id = Some(v);
         self
     }
-    pub fn connect_return_code(mut self, v: u8) -> Self {
+    pub fn with_connect_return_code(mut self, v: u8) -> Self {
         self.connect_return_code = Some(v);
         self
     }
 
-    fn build(mut self, msg_type: MsgType) -> Self {
+    pub fn set_client_id(&mut self, v: u32) {
+        self.client_id = Some(v);
+    }
+
+    pub fn build(mut self, msg_type: MsgType) -> Self {
         self.size = VarHeader::default_size(msg_type).unwrap();
         match msg_type {
             MsgType::ConnectExtended => {
@@ -204,7 +211,7 @@ impl VarHeader {
         };
         self
     }
-    fn default_size(msg_type: MsgType) -> Option<u16> {
+    pub fn default_size(msg_type: MsgType) -> Option<u16> {
         match msg_type {
             MsgType::Connect => Some(9),
             MsgType::ConnectAck => Some(1),
@@ -216,7 +223,8 @@ impl VarHeader {
             _ => None,
         }
     }
-    fn from_bytes(buf: &[u8], msg_type: MsgType) -> VarHeader {
+
+    pub fn from_bytes(buf: &[u8], msg_type: MsgType) -> VarHeader {
         let size = Self::default_size(msg_type);
         let mut var_header = match msg_type {
             MsgType::ConnectExtended => Self::create_connect(buf),
@@ -226,58 +234,88 @@ impl VarHeader {
             MsgType::Data => Self::create_data(buf),
             MsgType::DisConnectExtended => Self::create_disconnect(buf),
             MsgType::DisConnect => Self::create_disconnect_legacy(buf),
-            _ => VarHeader::new()
+            _ => VarHeader::new(),
         };
         var_header.size = size.unwrap();
         var_header
     }
     fn create_connect(buf: &[u8]) -> VarHeader {
         let var_header = VarHeader::new()
-            .protocol_id(buf[0])
-            .protocol_version(buf[1])
-            .keepalive_lsb(buf[2])
-            .keepalive_msb(buf[3])
-            .client_id(u32::from_le_bytes(buf[4..8].try_into().unwrap()))
-            .sender(buf[8])
-            .receiver(buf[9]);
+            .with_protocol_id(buf[0])
+            .with_protocol_version(buf[1])
+            .with_keepalive_lsb(buf[2])
+            .with_keepalive_msb(buf[3])
+            .with_client_id(u32::from_le_bytes(buf[4..8].try_into().unwrap()))
+            .with_sender(buf[8])
+            .with_receiver(buf[9]);
         var_header
     }
     fn create_connect_legacy(buf: &[u8]) -> VarHeader {
         VarHeader::new()
-            .protocol_id(buf[0])
-            .protocol_version(buf[1])
-            .keepalive_lsb(buf[2])
-            .keepalive_msb(buf[3])
-            .client_id(u32::from_le_bytes(buf[4..8].try_into().unwrap()))
-            .sender(buf[8])
+            .with_protocol_id(buf[0])
+            .with_protocol_version(buf[1])
+            .with_keepalive_lsb(buf[2])
+            .with_keepalive_msb(buf[3])
+            .with_client_id(u32::from_le_bytes(buf[4..8].try_into().unwrap()))
+            .with_sender(buf[8])
     }
     fn create_connect_ack(buf: &[u8]) -> VarHeader {
         VarHeader::new()
-            .connect_return_code(buf[0])
-            .client_id(u32::from_le_bytes(buf[1..5].try_into().unwrap()))
-            .sender(buf[5])
-            .receiver(buf[6])
+            .with_connect_return_code(buf[0])
+            .with_client_id(u32::from_le_bytes(buf[1..5].try_into().unwrap()))
+            .with_sender(buf[5])
+            .with_receiver(buf[6])
     }
 
     fn create_connect_ack_lagacy(buf: &[u8]) -> VarHeader {
-        VarHeader::new().connect_return_code(buf[0])
+        VarHeader::new().with_connect_return_code(buf[0])
     }
 
     fn create_data(buf: &[u8]) -> VarHeader {
         VarHeader::new()
-            .client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
-            .sender(buf[4])
-            .receiver(buf[5])
+            .with_client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
+            .with_sender(buf[4])
+            .with_receiver(buf[5])
     }
     fn create_disconnect(buf: &[u8]) -> VarHeader {
         VarHeader::new()
-            .client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
-            .sender(buf[4])
+            .with_client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
+            .with_sender(buf[4])
     }
     fn create_disconnect_legacy(buf: &[u8]) -> VarHeader {
         VarHeader::new()
-            .client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
-            .sender(buf[4])
-            .receiver(buf[5])
+            .with_client_id(u32::from_le_bytes(buf[0..4].try_into().unwrap()))
+            .with_sender(buf[4])
+            .with_receiver(buf[5])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_header() {
+        crate::init_tracing();
+        let mut header = Header::new();
+        header.msg_type = MsgType::ConnectExtended;
+        header.payload_length = 20;
+        header.crc = 0x1234;
+        let bytes: Vec<u8> = header.into();
+        info!("header bytes: {bytes:?}");
+        let h1 = Header::from(&bytes[..]);
+        assert_eq!(h1.crc, 0x1234);
+        assert_eq!(h1.payload_length, 20);
+        assert_eq!(h1.msg_type, MsgType::ConnectExtended);
+    }
+    #[test]
+    fn test_var_header_data() {
+        crate::init_tracing();
+        let mut var_header = VarHeader::new().build(MsgType::Data);
+        assert_eq!(var_header.data.len(), 6);
+        let vh = VarHeader::from_bytes(&var_header.data, MsgType::Data);
+        assert_eq!(vh.client_id.unwrap(), DEFAULT_CLIENT_ID);
+        assert_eq!(vh.sender.unwrap(), DEFAULT_SENDER);
+        assert_eq!(vh.receiver.unwrap(), DEFAULT_RECEIVER);
+        info!("vh: {vh:?}");
     }
 }

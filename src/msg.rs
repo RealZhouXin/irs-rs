@@ -6,6 +6,11 @@ pub mod serialization;
 use header::MsgType;
 use params::Param;
 
+use crate::msg::{
+    header::{Header, VarHeader},
+    payload::Payload,
+};
+
 pub struct Msg {
     header: header::Header,
     var_header: header::VarHeader,
@@ -15,7 +20,12 @@ pub struct Msg {
 
 impl Msg {
     pub fn new() -> Self {
-        todo!()
+        Self {
+            header: Header::new(),
+            var_header: VarHeader::new(),
+            payload: Payload::new(),
+            body: Vec::new(),
+        }
     }
     pub fn set_message_type(&mut self, msg_type: MsgType) {
         self.header.msg_type = msg_type;
@@ -35,9 +45,12 @@ impl Msg {
     pub fn get_msg_id(&self) -> u8 {
         self.payload.msg_id
     }
-    pub fn set_client_id(&mut self, client_id: u32) {}
+    pub fn set_client_id(&mut self, client_id: u32) {
+        self.var_header.set_client_id(client_id);
+    }
     pub fn to_bytes(&self) -> Vec<u8> {
-        todo!()
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&self.header);
     }
     pub fn from_bytes(bytes: &[u8]) -> Self {
         todo!()
