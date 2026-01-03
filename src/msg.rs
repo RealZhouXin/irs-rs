@@ -48,11 +48,35 @@ impl Msg {
     pub fn set_client_id(&mut self, client_id: u32) {
         self.var_header.set_client_id(client_id);
     }
-    pub fn to_bytes(&self) -> Vec<u8> {
+    pub fn to_bytes(self) -> Vec<u8> {
         let mut buf = Vec::new();
-        buf.extend_from_slice(&self.header);
+        let msg_type = self.header.msg_type;
+        let header_bytes: Vec<u8> = self.header.into();
+        buf.extend_from_slice(&header_bytes);
+        let var_header = self.var_header.build(msg_type);
+        buf.extend_from_slice(&var_header.data);
+        let payload = self.payload.to_bytes();
+        buf.extend_from_slice(&payload);
+        buf
     }
     pub fn from_bytes(bytes: &[u8]) -> Self {
-        todo!()
+        let header = Header::from(&bytes[0..8]);
+        let var_header = VarHeader::from_bytes(&bytes[8..], header.msg_type);
+        let var_head_len = VarHeader::default_size(header.msg_type);
+        let payload = Payload::from_bytes(&bytes[(7 + var_head_len.unwrap()) as usize..]);
+        Self {
+            header,
+            var_header,
+            payload,
+            body: Vec::new(),
+        }
     }
+}
+
+#[cfg(test)]
+mod tests {
+   #[test] 
+   fn test_msg_ser() {
+       
+   }
 }
